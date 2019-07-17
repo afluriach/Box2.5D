@@ -77,6 +77,15 @@ public:
 	virtual bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
 						const b2Transform& transform, int32 childIndex) const = 0;
 
+	//The first transform is the one applied to this shape; it is provided by the
+	//b2Fixture::ShapeQuery.
+	virtual bool ShapeQuery(
+		const b2Shape* shape,
+		const b2Transform& thisXF,
+		const b2Transform& otherXF,
+		int32 childIndex
+	) const = 0;
+
 	/// Given a transform, compute the associated axis aligned bounding box for a child shape.
 	/// @param aabb returns the axis aligned box.
 	/// @param xf the world transform of the shape.

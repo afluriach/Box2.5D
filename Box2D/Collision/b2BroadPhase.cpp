@@ -17,6 +17,7 @@
 */
 
 #include "Box2D/Collision/b2BroadPhase.h"
+#include "Box2D/Dynamics/b2Fixture.h"
 
 b2BroadPhase::b2BroadPhase()
 {
@@ -116,4 +117,14 @@ bool b2BroadPhase::QueryCallback(int32 proxyId)
 	++m_pairCount;
 
 	return true;
+}
+
+std::pair<b2Fixture*, int32> b2BroadPhase::GetFixture(int32 proxyID) const
+{
+	void* userData = GetUserData(proxyID);
+	b2FixtureProxy* proxy = (b2FixtureProxy*)userData;
+	b2Fixture* fixture = proxy->fixture;
+	int32 index = proxy->childIndex;
+
+	return std::make_pair(fixture, index);
 }

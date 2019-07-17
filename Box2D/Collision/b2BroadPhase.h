@@ -24,6 +24,8 @@
 #include "Box2D/Collision/b2DynamicTree.h"
 #include <algorithm>
 
+class b2Fixture;
+
 struct b2Pair
 {
 	int32 proxyIdA;
@@ -71,6 +73,8 @@ public:
 	/// Get the number of proxies.
 	int32 GetProxyCount() const;
 
+	std::pair<b2Fixture*,int32> GetFixture(int32 proxyID) const;
+
 	/// Update the pairs. This results in pair callbacks. This can only add pairs.
 	template <typename T>
 	void UpdatePairs(T* callback);
@@ -79,6 +83,9 @@ public:
 	/// is called for each proxy that overlaps the supplied AABB.
 	template <typename T>
 	void Query(T* callback, const b2AABB& aabb) const;
+
+	template <typename T>
+	void QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const;
 
 	/// Ray-cast against the proxies in the tree. This relies on the callback
 	/// to perform a exact ray-cast in the case were the proxy contains a shape.
@@ -241,6 +248,12 @@ template <typename T>
 inline void b2BroadPhase::Query(T* callback, const b2AABB& aabb) const
 {
 	m_tree.Query(callback, aabb);
+}
+
+template <typename T>
+void b2BroadPhase::QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const
+{
+	m_tree.QueryShape(callback, xf, shape);
 }
 
 template <typename T>

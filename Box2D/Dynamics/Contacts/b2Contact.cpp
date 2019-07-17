@@ -177,21 +177,17 @@ void b2Contact::Update(b2ContactListener* listener)
 	const b2Transform& xfA = bodyA->GetTransform();
 	const b2Transform& xfB = bodyB->GetTransform();
 
+	Evaluate(&m_manifold, xfA, xfB);
+	touching = m_manifold.pointCount > 0;
+
 	// Is this contact a sensor?
 	if (sensor)
 	{
-		const b2Shape* shapeA = m_fixtureA->GetShape();
-		const b2Shape* shapeB = m_fixtureB->GetShape();
-		touching = b2TestOverlap(shapeA, m_indexA, shapeB, m_indexB, xfA, xfB);
-
-		// Sensors don't generate manifolds.
+		// Sensors aren't supposed to generate manifolds, so hide this.
 		m_manifold.pointCount = 0;
 	}
 	else
 	{
-		Evaluate(&m_manifold, xfA, xfB);
-		touching = m_manifold.pointCount > 0;
-
 		// Match old contact ids to new contact ids and copy the
 		// stored impulses to warm start the solver.
 		for (int32 i = 0; i < m_manifold.pointCount; ++i)

@@ -19,6 +19,7 @@
 #ifndef B2_WORLD_H
 #define B2_WORLD_H
 
+#include "Box2D/Common/b2Filter.h"
 #include "Box2D/Common/b2Math.h"
 #include "Box2D/Common/b2BlockAllocator.h"
 #include "Box2D/Common/b2StackAllocator.h"
@@ -111,7 +112,20 @@ public:
 	/// provided AABB.
 	/// @param callback a user implemented callback class.
 	/// @param aabb the query box.
-	void QueryAABB(b2QueryCallback* callback, const b2AABB& aabb) const;
+	/// @param filter defines the types of fixtures to collide with. Use a filter with categoryBits and
+	/// layers both 0xFFFFFFFF for previous behavior, to collide with all objects that physically
+	/// overlap with the line.
+	void QueryAABB(b2QueryCallback callback, const b2AABB& aabb, const b2Filter& filter) const;
+
+	void QueryPoint(b2QueryCallback callback, const b2Vec2& p, const b2Filter& filter) const;
+
+	void QueryShape(
+		b2QueryCallback callback,
+		//The transform applied to the shape (position & angle), as though it were in a body.
+		const b2Transform& xf,
+		const b2Shape* shape,
+		const b2Filter& filter
+	) const;
 
 	/// Ray-cast the world for all fixtures in the path of the ray. Your callback
 	/// controls whether you get the closest point, any point, or n-points.
@@ -119,7 +133,15 @@ public:
 	/// @param callback a user implemented callback class.
 	/// @param point1 the ray starting point
 	/// @param point2 the ray ending point
-	void RayCast(b2RayCastCallback* callback, const b2Vec2& point1, const b2Vec2& point2) const;
+	/// @param filter defines the types of fixtures to collide with. Use a filter with categoryBits and
+	/// layers both 0xFFFFFFFF for previous behavior, to collide with all objects that physically
+	/// overlap with the line.
+	void RayCast(
+		b2RayCastCallback callback,
+		const b2Vec2& point1,
+		const b2Vec2& point2,
+		const b2Filter& filter
+	) const;
 
 	/// Get the world body list. With the returned body, use b2Body::GetNext to get
 	/// the next body in the world list. A nullptr body indicates the end of the list.

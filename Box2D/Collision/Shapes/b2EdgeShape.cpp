@@ -113,6 +113,30 @@ bool b2EdgeShape::RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
 	return true;
 }
 
+bool b2EdgeShape::ShapeQuery(
+	const b2Shape* shape,
+	const b2Transform& thisXF,
+	const b2Transform& otherXF,
+	int32 childIndex
+) const {
+	b2Manifold manifold;
+	auto _type = shape->GetType();
+
+	switch (_type)
+	{
+	case Type::e_circle:
+		b2CollideEdgeAndCircle(&manifold, (b2EdgeShape*)this, thisXF, (b2CircleShape*)shape, otherXF);
+	break;
+	case Type::e_polygon:
+		b2CollideEdgeAndPolygon(&manifold, (b2EdgeShape*)this, thisXF, (b2PolygonShape*)shape, otherXF);
+	break;
+	default:
+	break;
+	}
+
+	return manifold.pointCount > 0;
+}
+
 void b2EdgeShape::ComputeAABB(b2AABB* aabb, const b2Transform& xf, int32 childIndex) const
 {
 	B2_NOT_USED(childIndex);

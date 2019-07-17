@@ -170,6 +170,29 @@ bool b2ChainShape::RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
 	return edgeShape.RayCast(output, input, xf, 0);
 }
 
+bool b2ChainShape::ShapeQuery(
+	const b2Shape* shape,
+	const b2Transform& thisXF,
+	const b2Transform& otherXF,
+	int32 childIndex
+) const {
+	b2Assert(childIndex < m_count);
+
+	b2EdgeShape edgeShape;
+
+	int32 i1 = childIndex;
+	int32 i2 = childIndex + 1;
+	if (i2 == m_count)
+	{
+		i2 = 0;
+	}
+
+	edgeShape.m_vertex1 = m_vertices[i1];
+	edgeShape.m_vertex2 = m_vertices[i2];
+
+	return edgeShape.ShapeQuery(shape, thisXF, otherXF, 0);
+}
+
 void b2ChainShape::ComputeAABB(b2AABB* aabb, const b2Transform& xf, int32 childIndex) const
 {
 	b2Assert(childIndex < m_count);

@@ -638,7 +638,9 @@ void b2World::SolveTOI(const b2TimeStep& step)
 
 				b2BodyType typeA = bA->m_type;
 				b2BodyType typeB = bB->m_type;
-				b2Assert(typeA == b2_dynamicBody || typeB == b2_dynamicBody);
+
+				if (typeA != b2_dynamicBody && typeB != b2_dynamicBody)
+					continue;
 
 				bool activeA = bA->IsAwake() && typeA != b2_staticBody;
 				bool activeB = bB->IsAwake() && typeB != b2_staticBody;
@@ -976,51 +978,139 @@ struct b2WorldQueryWrapper
 	bool QueryCallback(int32 proxyId)
 	{
 		b2FixtureProxy* proxy = (b2FixtureProxy*)broadPhase->GetUserData(proxyId);
-		return callback->ReportFixture(proxy->fixture);
+		b2Filter _filter = proxy->fixture->GetFilterData();
+		
+		if (!_filter.isQueryCollide(filter)) {
+			return true;
+		}
+		else {
+			return callback(proxy->fixture);
+		}
 	}
 
 	const b2BroadPhase* broadPhase;
-	b2QueryCallback* callback;
+	b2QueryCallback callback;
+	b2Filter filter;
 };
 
-void b2World::QueryAABB(b2QueryCallback* callback, const b2AABB& aabb) const
+void b2World::QueryAABB(b2QueryCallback callback, const b2AABB& aabb, const b2Filter& filter) const
 {
 	b2WorldQueryWrapper wrapper;
 	wrapper.broadPhase = &m_contactManager.m_broadPhase;
 	wrapper.callback = callback;
+	wrapper.filter = filter;
 	m_contactManager.m_broadPhase.Query(&wrapper, aabb);
+}
+
+struct b2WorldQueryPointWrapper
+{
+	bool QueryCallback(int32 proxyId)
+	{
+		b2Fixture* fixture;
+		int32 index;
+		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
+		b2Filter _filter = fixture->GetFilterData();
+
+		if (_filter.isQueryCollide(filter) && fixture->TestPoint(target)) {
+			return callback(fixture);
+		}
+		else {
+			return true;
+		}
+	}
+
+	const b2BroadPhase* broadPhase;
+	b2Vec2 target;
+	b2QueryCallback callback;
+	b2Filter filter;
+};
+
+void b2World::QueryPoint(b2QueryCallback callback, const b2Vec2& p, const b2Filter& filter) const
+{
+	b2WorldQueryPointWrapper wrapper;
+	wrapper.broadPhase = &m_contactManager.m_broadPhase;
+	wrapper.target = p;
+	wrapper.callback = callback;
+	wrapper.filter = filter;
+	m_contactManager.m_broadPhase.Query(&wrapper, b2AABB{ p, p });
+}
+
+struct b2WorldQueryShapeWrapper
+{
+	void QueryShapeCallback(int32 proxyId)
+	{
+		b2Fixture* fixture;
+		int32 index;
+		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
+		b2Filter _filter = fixture->GetFilterData();
+
+		if (
+			_filter.isQueryCollide(filter) &&
+			fixture->ShapeQuery(shape, xf, index)
+		) {
+			callback(fixture);
+		}
+	}
+
+	const b2BroadPhase* broadPhase;
+	const b2Shape* shape;
+	b2QueryCallback callback;
+	b2Transform xf;
+	b2Filter filter;
+};
+
+void b2World::QueryShape(
+	b2QueryCallback callback,
+	const b2Transform& xf,
+	const b2Shape* shape,
+	const b2Filter& filter
+) const{
+	b2WorldQueryShapeWrapper wrapper;
+	wrapper.broadPhase = &m_contactManager.m_broadPhase;
+	wrapper.callback = callback;
+	wrapper.shape = shape;
+	wrapper.xf = xf;
+	wrapper.filter = filter;
+	m_contactManager.m_broadPhase.QueryShape(&wrapper, xf, shape);
 }
 
 struct b2WorldRayCastWrapper
 {
 	float32 RayCastCallback(const b2RayCastInput& input, int32 proxyId)
 	{
-		void* userData = broadPhase->GetUserData(proxyId);
-		b2FixtureProxy* proxy = (b2FixtureProxy*)userData;
-		b2Fixture* fixture = proxy->fixture;
-		int32 index = proxy->childIndex;
+		b2Fixture* fixture;
+		int32 index;
+		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
 		b2RayCastOutput output;
-		bool hit = fixture->RayCast(&output, input, index);
+		b2Filter _filter = fixture->GetFilterData();
 
-		if (hit)
+		if (_filter.isQueryCollide(filter) && fixture->RayCast(&output, input, index))
 		{
 			float32 fraction = output.fraction;
 			b2Vec2 point = (1.0f - fraction) * input.p1 + fraction * input.p2;
-			return callback->ReportFixture(fixture, point, output.normal, fraction);
+			return callback(fixture, point, output.normal, fraction);
 		}
-
-		return input.maxFraction;
+		else
+		{
+			return input.maxFraction;
+		}
 	}
 
 	const b2BroadPhase* broadPhase;
-	b2RayCastCallback* callback;
+	b2RayCastCallback callback;
+	b2Filter filter;
 };
 
-void b2World::RayCast(b2RayCastCallback* callback, const b2Vec2& point1, const b2Vec2& point2) const
-{
+void b2World::RayCast(
+	b2RayCastCallback callback,
+	const b2Vec2& point1,
+	const b2Vec2& point2,
+	const b2Filter& filter
+) const{
 	b2WorldRayCastWrapper wrapper;
 	wrapper.broadPhase = &m_contactManager.m_broadPhase;
 	wrapper.callback = callback;
+	wrapper.filter = filter;
 	b2RayCastInput input;
 	input.maxFraction = 1.0f;
 	input.p1 = point1;

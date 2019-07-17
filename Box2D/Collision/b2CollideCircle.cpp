@@ -41,7 +41,8 @@ void b2CollideCircles(
 
 	manifold->type = b2Manifold::e_circles;
 	manifold->localPoint = circleA->m_p;
-	manifold->localNormal.SetZero();
+	manifold->localNormal = -d;
+	manifold->localNormal.Normalize();
 	manifold->pointCount = 1;
 
 	manifold->points[0].localPoint = circleB->m_p;

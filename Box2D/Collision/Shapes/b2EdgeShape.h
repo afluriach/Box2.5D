@@ -45,6 +45,13 @@ public:
 	bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
 				const b2Transform& transform, int32 childIndex) const override;
 
+	virtual bool ShapeQuery(
+		const b2Shape* shape,
+		const b2Transform& thisXF,
+		const b2Transform& otherXF,
+		int32 childIndex
+	) const;
+
 	/// @see b2Shape::ComputeAABB
 	void ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const override;
 

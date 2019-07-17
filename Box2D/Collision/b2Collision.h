@@ -176,12 +176,24 @@ struct b2AABB
 		return 0.5f * (upperBound - lowerBound);
 	}
 
+	b2Vec2 GetDimensions() const
+	{
+		return (upperBound - lowerBound);
+	}
+
 	/// Get the perimeter length
 	float32 GetPerimeter() const
 	{
 		float32 wx = upperBound.x - lowerBound.x;
 		float32 wy = upperBound.y - lowerBound.y;
 		return 2.0f * (wx + wy);
+	}
+
+	/// Combine a point into this.
+	void Combine(const b2Vec2& p)
+	{
+		lowerBound = b2Min(lowerBound, p);
+		upperBound = b2Max(upperBound, p);
 	}
 
 	/// Combine an AABB into this one.
