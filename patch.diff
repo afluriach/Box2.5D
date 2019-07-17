@@ -1,0 +1,1230 @@
+From ab90951e470c33c1dedb2d5fb7c679d9fbb10344 Mon Sep 17 00:00:00 2001
+From: afluriach <afluriach@gmail.com>
+Date: Wed, 17 Jul 2019 11:35:08 -0600
+Subject: [PATCH] all changes
+
+---
+ Box2D/Collision/Shapes/b2ChainShape.cpp   |  23 ++++++
+ Box2D/Collision/Shapes/b2ChainShape.h     |   7 ++
+ Box2D/Collision/Shapes/b2CircleShape.cpp  |  27 +++++++
+ Box2D/Collision/Shapes/b2CircleShape.h    |   7 ++
+ Box2D/Collision/Shapes/b2EdgeShape.cpp    |  24 ++++++
+ Box2D/Collision/Shapes/b2EdgeShape.h      |   7 ++
+ Box2D/Collision/Shapes/b2PolygonShape.cpp |  27 +++++++
+ Box2D/Collision/Shapes/b2PolygonShape.h   |   7 ++
+ Box2D/Collision/Shapes/b2Shape.h          |   9 +++
+ Box2D/Collision/b2BroadPhase.cpp          |  11 +++
+ Box2D/Collision/b2BroadPhase.h            |  13 ++++
+ Box2D/Collision/b2CollideCircle.cpp       |   3 +-
+ Box2D/Collision/b2Collision.h             |  12 +++
+ Box2D/Collision/b2DynamicTree.h           |  41 +++++++++-
+ Box2D/Common/b2Filter.cpp                 |  31 ++++++++
+ Box2D/Common/b2Filter.h                   |  40 ++++++++++
+ Box2D/Common/b2Math.h                     |  26 +++----
+ Box2D/Common/b2Settings.h                 |   8 +-
+ Box2D/Dynamics/Contacts/b2Contact.cpp     |  12 +--
+ Box2D/Dynamics/b2Body.cpp                 |  53 ++++++++++---
+ Box2D/Dynamics/b2Body.h                   |   8 ++
+ Box2D/Dynamics/b2ContactManager.cpp       |   4 +-
+ Box2D/Dynamics/b2Fixture.cpp              |  14 ++++
+ Box2D/Dynamics/b2Fixture.h                |  45 ++++++-----
+ Box2D/Dynamics/b2World.cpp                | 122 ++++++++++++++++++++++++++----
+ Box2D/Dynamics/b2World.h                  |  26 ++++++-
+ Box2D/Dynamics/b2WorldCallbacks.cpp       |   8 +-
+ Box2D/Dynamics/b2WorldCallbacks.h         |  47 +++++-------
+ 28 files changed, 547 insertions(+), 115 deletions(-)
+ create mode 100644 Box2D/Common/b2Filter.cpp
+ create mode 100644 Box2D/Common/b2Filter.h
+
+diff --git a/Box2D/Collision/Shapes/b2ChainShape.cpp b/Box2D/Collision/Shapes/b2ChainShape.cpp
+index a709585..9b1907b 100644
+--- a/Box2D/Collision/Shapes/b2ChainShape.cpp
++++ b/Box2D/Collision/Shapes/b2ChainShape.cpp
+@@ -170,6 +170,29 @@ bool b2ChainShape::RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
+ 	return edgeShape.RayCast(output, input, xf, 0);
+ }
+ 
++bool b2ChainShape::ShapeQuery(
++	const b2Shape* shape,
++	const b2Transform& thisXF,
++	const b2Transform& otherXF,
++	int32 childIndex
++) const {
++	b2Assert(childIndex < m_count);
++
++	b2EdgeShape edgeShape;
++
++	int32 i1 = childIndex;
++	int32 i2 = childIndex + 1;
++	if (i2 == m_count)
++	{
++		i2 = 0;
++	}
++
++	edgeShape.m_vertex1 = m_vertices[i1];
++	edgeShape.m_vertex2 = m_vertices[i2];
++
++	return edgeShape.ShapeQuery(shape, thisXF, otherXF, 0);
++}
++
+ void b2ChainShape::ComputeAABB(b2AABB* aabb, const b2Transform& xf, int32 childIndex) const
+ {
+ 	b2Assert(childIndex < m_count);
+diff --git a/Box2D/Collision/Shapes/b2ChainShape.h b/Box2D/Collision/Shapes/b2ChainShape.h
+index 7c8c1a8..4378460 100644
+--- a/Box2D/Collision/Shapes/b2ChainShape.h
++++ b/Box2D/Collision/Shapes/b2ChainShape.h
+@@ -78,6 +78,13 @@ public:
+ 	/// @see b2Shape::ComputeAABB
+ 	void ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const override;
+ 
++	virtual bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& thisXF,
++		const b2Transform& otherXF,
++		int32 childIndex
++	) const;
++
+ 	/// Chains have zero mass.
+ 	/// @see b2Shape::ComputeMass
+ 	void ComputeMass(b2MassData* massData, float32 density) const override;
+diff --git a/Box2D/Collision/Shapes/b2CircleShape.cpp b/Box2D/Collision/Shapes/b2CircleShape.cpp
+index fa24dc8..0bcb4e1 100644
+--- a/Box2D/Collision/Shapes/b2CircleShape.cpp
++++ b/Box2D/Collision/Shapes/b2CircleShape.cpp
+@@ -80,6 +80,33 @@ bool b2CircleShape::RayCast(b2RayCastOutput* output, const b2RayCastInput& input
+ 	return false;
+ }
+ 
++bool b2CircleShape::ShapeQuery(
++	const b2Shape* shape,
++	const b2Transform& thisXF,
++	const b2Transform& otherXF,
++	int32 childIndex
++) const {
++	b2Manifold manifold;
++	auto _type = shape->GetType();
++
++	switch (_type)
++	{
++	case Type::e_circle:
++		b2CollideCircles(&manifold, (b2CircleShape*)this, thisXF, (b2CircleShape*)shape, otherXF);
++	break;
++	case Type::e_polygon:
++		b2CollidePolygonAndCircle(&manifold, (b2PolygonShape*)shape, otherXF, (b2CircleShape*)this, thisXF);
++	break;
++	case Type::e_edge:
++		b2CollideEdgeAndCircle(&manifold, (b2EdgeShape*)shape, otherXF, (b2CircleShape*)this, thisXF);
++	break;
++	default:
++	break;
++	}
++
++	return manifold.pointCount > 0;
++}
++
+ void b2CircleShape::ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const
+ {
+ 	B2_NOT_USED(childIndex);
+diff --git a/Box2D/Collision/Shapes/b2CircleShape.h b/Box2D/Collision/Shapes/b2CircleShape.h
+index d2c646e..b8dccb1 100644
+--- a/Box2D/Collision/Shapes/b2CircleShape.h
++++ b/Box2D/Collision/Shapes/b2CircleShape.h
+@@ -40,6 +40,13 @@ public:
+ 	bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
+ 				const b2Transform& transform, int32 childIndex) const override;
+ 
++	virtual bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& thisXF,
++		const b2Transform& otherXF,
++		int32 childIndex
++	) const;
++
+ 	/// @see b2Shape::ComputeAABB
+ 	void ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const override;
+ 
+diff --git a/Box2D/Collision/Shapes/b2EdgeShape.cpp b/Box2D/Collision/Shapes/b2EdgeShape.cpp
+index 7b8dd57..339ee1a 100644
+--- a/Box2D/Collision/Shapes/b2EdgeShape.cpp
++++ b/Box2D/Collision/Shapes/b2EdgeShape.cpp
+@@ -113,6 +113,30 @@ bool b2EdgeShape::RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
+ 	return true;
+ }
+ 
++bool b2EdgeShape::ShapeQuery(
++	const b2Shape* shape,
++	const b2Transform& thisXF,
++	const b2Transform& otherXF,
++	int32 childIndex
++) const {
++	b2Manifold manifold;
++	auto _type = shape->GetType();
++
++	switch (_type)
++	{
++	case Type::e_circle:
++		b2CollideEdgeAndCircle(&manifold, (b2EdgeShape*)this, thisXF, (b2CircleShape*)shape, otherXF);
++	break;
++	case Type::e_polygon:
++		b2CollideEdgeAndPolygon(&manifold, (b2EdgeShape*)this, thisXF, (b2PolygonShape*)shape, otherXF);
++	break;
++	default:
++	break;
++	}
++
++	return manifold.pointCount > 0;
++}
++
+ void b2EdgeShape::ComputeAABB(b2AABB* aabb, const b2Transform& xf, int32 childIndex) const
+ {
+ 	B2_NOT_USED(childIndex);
+diff --git a/Box2D/Collision/Shapes/b2EdgeShape.h b/Box2D/Collision/Shapes/b2EdgeShape.h
+index 63b1a56..a3f2dd3 100644
+--- a/Box2D/Collision/Shapes/b2EdgeShape.h
++++ b/Box2D/Collision/Shapes/b2EdgeShape.h
+@@ -45,6 +45,13 @@ public:
+ 	bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
+ 				const b2Transform& transform, int32 childIndex) const override;
+ 
++	virtual bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& thisXF,
++		const b2Transform& otherXF,
++		int32 childIndex
++	) const;
++
+ 	/// @see b2Shape::ComputeAABB
+ 	void ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const override;
+ 
+diff --git a/Box2D/Collision/Shapes/b2PolygonShape.cpp b/Box2D/Collision/Shapes/b2PolygonShape.cpp
+index 3c8c47d..0fe1fe6 100644
+--- a/Box2D/Collision/Shapes/b2PolygonShape.cpp
++++ b/Box2D/Collision/Shapes/b2PolygonShape.cpp
+@@ -356,6 +356,33 @@ void b2PolygonShape::ComputeAABB(b2AABB* aabb, const b2Transform& xf, int32 chil
+ 	aabb->upperBound = upper + r;
+ }
+ 
++bool b2PolygonShape::ShapeQuery(
++	const b2Shape* shape,
++	const b2Transform& thisXF,
++	const b2Transform& otherXF,
++	int32 childIndex
++) const {
++	b2Manifold manifold;
++	auto _type = shape->GetType();
++
++	switch (_type)
++	{
++	case Type::e_circle:
++		b2CollidePolygonAndCircle(&manifold, (b2PolygonShape*)this, thisXF, (b2CircleShape*)shape, otherXF);
++	break;
++	case Type::e_polygon:
++		b2CollidePolygons(&manifold, (b2PolygonShape*)this, thisXF, (b2PolygonShape*)shape, otherXF);
++	break;
++	case Type::e_edge:
++		b2CollideEdgeAndPolygon(&manifold, (b2EdgeShape*)shape, otherXF, (b2PolygonShape*)this, thisXF);
++	break;
++	default:
++	break;
++	}
++
++	return manifold.pointCount > 0;
++}
++
+ void b2PolygonShape::ComputeMass(b2MassData* massData, float32 density) const
+ {
+ 	// Polygon mass, centroid, and inertia.
+diff --git a/Box2D/Collision/Shapes/b2PolygonShape.h b/Box2D/Collision/Shapes/b2PolygonShape.h
+index 26c5e61..ed3c497 100644
+--- a/Box2D/Collision/Shapes/b2PolygonShape.h
++++ b/Box2D/Collision/Shapes/b2PolygonShape.h
+@@ -65,6 +65,13 @@ public:
+ 	/// @see b2Shape::ComputeAABB
+ 	void ComputeAABB(b2AABB* aabb, const b2Transform& transform, int32 childIndex) const override;
+ 
++	virtual bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& thisXF,
++		const b2Transform& otherXF,
++		int32 childIndex
++	) const;
++
+ 	/// @see b2Shape::ComputeMass
+ 	void ComputeMass(b2MassData* massData, float32 density) const override;
+ 
+diff --git a/Box2D/Collision/Shapes/b2Shape.h b/Box2D/Collision/Shapes/b2Shape.h
+index 653e362..7c8b616 100644
+--- a/Box2D/Collision/Shapes/b2Shape.h
++++ b/Box2D/Collision/Shapes/b2Shape.h
+@@ -77,6 +77,15 @@ public:
+ 	virtual bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input,
+ 						const b2Transform& transform, int32 childIndex) const = 0;
+ 
++	//The first transform is the one applied to this shape; it is provided by the
++	//b2Fixture::ShapeQuery.
++	virtual bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& thisXF,
++		const b2Transform& otherXF,
++		int32 childIndex
++	) const = 0;
++
+ 	/// Given a transform, compute the associated axis aligned bounding box for a child shape.
+ 	/// @param aabb returns the axis aligned box.
+ 	/// @param xf the world transform of the shape.
+diff --git a/Box2D/Collision/b2BroadPhase.cpp b/Box2D/Collision/b2BroadPhase.cpp
+index e96339d..7cd324c 100644
+--- a/Box2D/Collision/b2BroadPhase.cpp
++++ b/Box2D/Collision/b2BroadPhase.cpp
+@@ -17,6 +17,7 @@
+ */
+ 
+ #include "Box2D/Collision/b2BroadPhase.h"
++#include "Box2D/Dynamics/b2Fixture.h"
+ 
+ b2BroadPhase::b2BroadPhase()
+ {
+@@ -117,3 +118,13 @@ bool b2BroadPhase::QueryCallback(int32 proxyId)
+ 
+ 	return true;
+ }
++
++std::pair<b2Fixture*, int32> b2BroadPhase::GetFixture(int32 proxyID) const
++{
++	void* userData = GetUserData(proxyID);
++	b2FixtureProxy* proxy = (b2FixtureProxy*)userData;
++	b2Fixture* fixture = proxy->fixture;
++	int32 index = proxy->childIndex;
++
++	return std::make_pair(fixture, index);
++}
+diff --git a/Box2D/Collision/b2BroadPhase.h b/Box2D/Collision/b2BroadPhase.h
+index d2965ed..680e780 100644
+--- a/Box2D/Collision/b2BroadPhase.h
++++ b/Box2D/Collision/b2BroadPhase.h
+@@ -24,6 +24,8 @@
+ #include "Box2D/Collision/b2DynamicTree.h"
+ #include <algorithm>
+ 
++class b2Fixture;
++
+ struct b2Pair
+ {
+ 	int32 proxyIdA;
+@@ -71,6 +73,8 @@ public:
+ 	/// Get the number of proxies.
+ 	int32 GetProxyCount() const;
+ 
++	std::pair<b2Fixture*,int32> GetFixture(int32 proxyID) const;
++
+ 	/// Update the pairs. This results in pair callbacks. This can only add pairs.
+ 	template <typename T>
+ 	void UpdatePairs(T* callback);
+@@ -80,6 +84,9 @@ public:
+ 	template <typename T>
+ 	void Query(T* callback, const b2AABB& aabb) const;
+ 
++	template <typename T>
++	void QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const;
++
+ 	/// Ray-cast against the proxies in the tree. This relies on the callback
+ 	/// to perform a exact ray-cast in the case were the proxy contains a shape.
+ 	/// The callback also performs the any collision filtering. This has performance
+@@ -244,6 +251,12 @@ inline void b2BroadPhase::Query(T* callback, const b2AABB& aabb) const
+ }
+ 
+ template <typename T>
++void b2BroadPhase::QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const
++{
++	m_tree.QueryShape(callback, xf, shape);
++}
++
++template <typename T>
+ inline void b2BroadPhase::RayCast(T* callback, const b2RayCastInput& input) const
+ {
+ 	m_tree.RayCast(callback, input);
+diff --git a/Box2D/Collision/b2CollideCircle.cpp b/Box2D/Collision/b2CollideCircle.cpp
+index f39f057..0c65ec2 100644
+--- a/Box2D/Collision/b2CollideCircle.cpp
++++ b/Box2D/Collision/b2CollideCircle.cpp
+@@ -41,7 +41,8 @@ void b2CollideCircles(
+ 
+ 	manifold->type = b2Manifold::e_circles;
+ 	manifold->localPoint = circleA->m_p;
+-	manifold->localNormal.SetZero();
++	manifold->localNormal = -d;
++	manifold->localNormal.Normalize();
+ 	manifold->pointCount = 1;
+ 
+ 	manifold->points[0].localPoint = circleB->m_p;
+diff --git a/Box2D/Collision/b2Collision.h b/Box2D/Collision/b2Collision.h
+index fe1f4cd..66f4a69 100644
+--- a/Box2D/Collision/b2Collision.h
++++ b/Box2D/Collision/b2Collision.h
+@@ -176,6 +176,11 @@ struct b2AABB
+ 		return 0.5f * (upperBound - lowerBound);
+ 	}
+ 
++	b2Vec2 GetDimensions() const
++	{
++		return (upperBound - lowerBound);
++	}
++
+ 	/// Get the perimeter length
+ 	float32 GetPerimeter() const
+ 	{
+@@ -184,6 +189,13 @@ struct b2AABB
+ 		return 2.0f * (wx + wy);
+ 	}
+ 
++	/// Combine a point into this.
++	void Combine(const b2Vec2& p)
++	{
++		lowerBound = b2Min(lowerBound, p);
++		upperBound = b2Max(upperBound, p);
++	}
++
+ 	/// Combine an AABB into this one.
+ 	void Combine(const b2AABB& aabb)
+ 	{
+diff --git a/Box2D/Collision/b2DynamicTree.h b/Box2D/Collision/b2DynamicTree.h
+index e52b44b..7416bc4 100644
+--- a/Box2D/Collision/b2DynamicTree.h
++++ b/Box2D/Collision/b2DynamicTree.h
+@@ -91,6 +91,9 @@ public:
+ 	template <typename T>
+ 	void Query(T* callback, const b2AABB& aabb) const;
+ 
++	template <typename T>
++	void QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const;
++
+ 	/// Ray-cast against the proxies in the tree. This relies on the callback
+ 	/// to perform a exact ray-cast in the case were the proxy contains a shape.
+ 	/// The callback also performs the any collision filtering. This has performance
+@@ -201,12 +204,48 @@ inline void b2DynamicTree::Query(T* callback, const b2AABB& aabb) const
+ }
+ 
+ template <typename T>
++inline void b2DynamicTree::QueryShape(T* callback, const b2Transform& xf, const b2Shape* shape) const
++{
++	b2GrowableStack<int32, 256> stack;
++	stack.Push(m_root);
++	b2AABB aabb;
++	shape->ComputeAABB(&aabb, xf, 0);
++
++	while (stack.GetCount() > 0)
++	{
++		int32 nodeId = stack.Pop();
++		if (nodeId == b2_nullNode)
++		{
++			continue;
++		}
++
++		const b2TreeNode* node = m_nodes + nodeId;
++
++		if (!b2TestOverlap(node->aabb, aabb))
++			continue;
++
++		if (node->IsLeaf())
++		{
++			callback->QueryShapeCallback(nodeId);
++		}
++		else
++		{
++			stack.Push(node->child1);
++			stack.Push(node->child2);
++		}
++	}
++}
++
++template <typename T>
+ inline void b2DynamicTree::RayCast(T* callback, const b2RayCastInput& input) const
+ {
+ 	b2Vec2 p1 = input.p1;
+ 	b2Vec2 p2 = input.p2;
+ 	b2Vec2 r = p2 - p1;
+-	b2Assert(r.LengthSquared() > 0.0f);
++
++	if (r.LengthSquared() == 0.0f)
++		return;
++	
+ 	r.Normalize();
+ 
+ 	// v is perpendicular to the segment.
+diff --git a/Box2D/Common/b2Filter.cpp b/Box2D/Common/b2Filter.cpp
+new file mode 100644
+index 0000000..42d9977
+--- /dev/null
++++ b/Box2D/Common/b2Filter.cpp
+@@ -0,0 +1,31 @@
++
++#include <Box2D/Common/b2Filter.h>
++
++bool b2Filter::shouldCollide(const b2Filter& other) const
++{
++	bool layersCollide = layers & other.layers;
++
++	if (groupIndex == other.groupIndex && groupIndex != 0)
++	{
++		return groupIndex > 0 && layersCollide;
++	}
++	else
++	{
++		return (maskBits & other.categoryBits) != 0 &&
++			(categoryBits & other.maskBits) != 0 &&
++			layersCollide;
++	}
++}
++
++bool b2Filter::isQueryCollide(const b2Filter& other) const
++{
++	return other.isBlankType() ?
++		(other.maskBits & categoryBits) && (other.layers & layers) :
++		shouldCollide(other)
++	;
++}
++
++bool b2Filter::isBlankType() const
++{
++	return categoryBits == 0 && groupIndex == 0;
++}
+diff --git a/Box2D/Common/b2Filter.h b/Box2D/Common/b2Filter.h
+new file mode 100644
+index 0000000..8d5499a
+--- /dev/null
++++ b/Box2D/Common/b2Filter.h
+@@ -0,0 +1,40 @@
++#ifndef B2_FILTER_H
++#define B2_FILTER_H
++
++#include <Box2D/Common/b2Settings.h>
++
++/// This holds contact filtering data.
++struct b2Filter
++{
++	b2Filter()
++	{
++		categoryBits = 0x0000;
++		maskBits = 0x0;
++		groupIndex = 0;
++		layers = 0;
++	}
++
++	/// The collision category bits. Normally you would just set one bit.
++	uint32 categoryBits;
++
++	/// The collision mask bits. This states the categories that this
++	/// shape would accept for collision.
++	uint32 maskBits;
++
++	/// Collision groups allow a certain group of objects to never collide (negative)
++	/// or always collide (positive). Zero means no collision group. Non-zero group
++	/// filtering always wins against the mask bits.
++	int32 groupIndex;
++
++	uint32 layers;
++
++	//Refactored from b2ContactFilter::ShouldCollide.
++	bool shouldCollide(const b2Filter& other) const;
++	//In this case, the filter might not be compared against the identity of an object.
++	//If the provided filter has a blank identity, simply check a match by type & layers.
++	bool isQueryCollide(const b2Filter& other) const;
++
++	bool isBlankType() const;
++};
++
++#endif
+diff --git a/Box2D/Common/b2Math.h b/Box2D/Common/b2Math.h
+index 7a816e5..62ff11f 100644
+--- a/Box2D/Common/b2Math.h
++++ b/Box2D/Common/b2Math.h
+@@ -20,6 +20,7 @@
+ #define B2_MATH_H
+ 
+ #include "Box2D/Common/b2Settings.h"
++#include <algorithm>
+ #include <math.h>
+ 
+ /// This function is used to ensure that a floating point number is not a NaN or infinity.
+@@ -28,8 +29,8 @@ inline bool b2IsValid(float32 x)
+ 	return isfinite(x);
+ }
+ 
+-#define	b2Sqrt(x)	sqrtf(x)
+-#define	b2Atan2(y, x)	atan2f(y, x)
++#define	b2Sqrt(x)	sqrt(x)
++#define	b2Atan2(y, x)	atan2(y, x)
+ 
+ /// A 2D column vector.
+ struct b2Vec2
+@@ -286,16 +287,16 @@ struct b2Rot
+ 	explicit b2Rot(float32 angle)
+ 	{
+ 		/// TODO_ERIN optimize
+-		s = sinf(angle);
+-		c = cosf(angle);
++		s = sin(angle);
++		c = cos(angle);
+ 	}
+ 
+ 	/// Set using an angle in radians.
+ 	void Set(float32 angle)
+ 	{
+ 		/// TODO_ERIN optimize
+-		s = sinf(angle);
+-		c = cosf(angle);
++		s = sin(angle);
++		c = cos(angle);
+ 	}
+ 
+ 	/// Set to the identity rotation
+@@ -615,10 +616,9 @@ inline b2Mat22 b2Abs(const b2Mat22& A)
+ 	return b2Mat22(b2Abs(A.ex), b2Abs(A.ey));
+ }
+ 
+-template <typename T>
+-inline T b2Min(T a, T b)
++inline float64 b2Min(float64 a, float64 b)
+ {
+-	return a < b ? a : b;
++	return std::min(a, b);
+ }
+ 
+ inline b2Vec2 b2Min(const b2Vec2& a, const b2Vec2& b)
+@@ -626,8 +626,7 @@ inline b2Vec2 b2Min(const b2Vec2& a, const b2Vec2& b)
+ 	return b2Vec2(b2Min(a.x, b.x), b2Min(a.y, b.y));
+ }
+ 
+-template <typename T>
+-inline T b2Max(T a, T b)
++inline float64 b2Max(float64 a, float64 b)
+ {
+ 	return a > b ? a : b;
+ }
+@@ -637,8 +636,7 @@ inline b2Vec2 b2Max(const b2Vec2& a, const b2Vec2& b)
+ 	return b2Vec2(b2Max(a.x, b.x), b2Max(a.y, b.y));
+ }
+ 
+-template <typename T>
+-inline T b2Clamp(T a, T low, T high)
++inline float64 b2Clamp(float64 a, float64 low, float64 high)
+ {
+ 	return b2Max(low, b2Min(a, high));
+ }
+@@ -699,7 +697,7 @@ inline void b2Sweep::Advance(float32 alpha)
+ inline void b2Sweep::Normalize()
+ {
+ 	float32 twoPi = 2.0f * b2_pi;
+-	float32 d =  twoPi * floorf(a0 / twoPi);
++	float32 d =  twoPi * floor(a0 / twoPi);
+ 	a0 -= d;
+ 	a -= d;
+ }
+diff --git a/Box2D/Common/b2Settings.h b/Box2D/Common/b2Settings.h
+index c69280f..1534aa2 100644
+--- a/Box2D/Common/b2Settings.h
++++ b/Box2D/Common/b2Settings.h
+@@ -36,12 +36,12 @@ typedef signed int int32;
+ typedef unsigned char uint8;
+ typedef unsigned short uint16;
+ typedef unsigned int uint32;
+-typedef float float32;
++typedef double float32;
+ typedef double float64;
+ 
+-#define	b2_maxFloat		FLT_MAX
+-#define	b2_epsilon		FLT_EPSILON
+-#define b2_pi			3.14159265359f
++#define	b2_maxFloat		DBL_MAX
++#define	b2_epsilon		DBL_EPSILON
++#define b2_pi			3.14159265359
+ 
+ /// @file
+ /// Global tuning constants based on meters-kilograms-seconds (MKS) units.
+diff --git a/Box2D/Dynamics/Contacts/b2Contact.cpp b/Box2D/Dynamics/Contacts/b2Contact.cpp
+index 41b0f78..7b21708 100644
+--- a/Box2D/Dynamics/Contacts/b2Contact.cpp
++++ b/Box2D/Dynamics/Contacts/b2Contact.cpp
+@@ -177,21 +177,17 @@ void b2Contact::Update(b2ContactListener* listener)
+ 	const b2Transform& xfA = bodyA->GetTransform();
+ 	const b2Transform& xfB = bodyB->GetTransform();
+ 
++	Evaluate(&m_manifold, xfA, xfB);
++	touching = m_manifold.pointCount > 0;
++
+ 	// Is this contact a sensor?
+ 	if (sensor)
+ 	{
+-		const b2Shape* shapeA = m_fixtureA->GetShape();
+-		const b2Shape* shapeB = m_fixtureB->GetShape();
+-		touching = b2TestOverlap(shapeA, m_indexA, shapeB, m_indexB, xfA, xfB);
+-
+-		// Sensors don't generate manifolds.
++		// Sensors aren't supposed to generate manifolds, so hide this.
+ 		m_manifold.pointCount = 0;
+ 	}
+ 	else
+ 	{
+-		Evaluate(&m_manifold, xfA, xfB);
+-		touching = m_manifold.pointCount > 0;
+-
+ 		// Match old contact ids to new contact ids and copy the
+ 		// stored impulses to warm start the solver.
+ 		for (int32 i = 0; i < m_manifold.pointCount; ++i)
+diff --git a/Box2D/Dynamics/b2Body.cpp b/Box2D/Dynamics/b2Body.cpp
+index 54154b8..37b2ec4 100644
+--- a/Box2D/Dynamics/b2Body.cpp
++++ b/Box2D/Dynamics/b2Body.cpp
+@@ -398,12 +398,6 @@ void b2Body::SetMassData(const b2MassData* massData)
+ 
+ bool b2Body::ShouldCollide(const b2Body* other) const
+ {
+-	// At least one body should be dynamic.
+-	if (m_type != b2_dynamicBody && other->m_type != b2_dynamicBody)
+-	{
+-		return false;
+-	}
+-
+ 	// Does a joint prevent collision?
+ 	for (b2JointEdge* jn = m_jointList; jn; jn = jn->next)
+ 	{
+@@ -436,11 +430,43 @@ void b2Body::SetTransform(const b2Vec2& position, float32 angle)
+ 	m_sweep.c0 = m_sweep.c;
+ 	m_sweep.a0 = angle;
+ 
+-	b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
+-	for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
++	updateTransform();
++}
++
++void b2Body::SetPosition(const b2Vec2& position)
++{
++	b2Assert(m_world->IsLocked() == false);
++	if (m_world->IsLocked() == true)
+ 	{
+-		f->Synchronize(broadPhase, m_xf, m_xf);
++		return;
++	}
++
++	m_xf.p = position;
++
++	m_sweep.c = b2Mul(m_xf, m_sweep.localCenter);
++
++	m_sweep.c0 = m_sweep.c;
++
++	updateTransform();
++}
++
++void b2Body::SetAngle(float32 angle)
++{
++	b2Assert(m_world->IsLocked() == false);
++	if (m_world->IsLocked() == true)
++	{
++		return;
+ 	}
++
++	m_xf.q.Set(angle);
++
++	m_sweep.c = b2Mul(m_xf, m_sweep.localCenter);
++	m_sweep.a = angle;
++
++	m_sweep.c0 = m_sweep.c;
++	m_sweep.a0 = angle;
++
++	updateTransform();
+ }
+ 
+ void b2Body::SynchronizeFixtures()
+@@ -456,6 +482,15 @@ void b2Body::SynchronizeFixtures()
+ 	}
+ }
+ 
++void b2Body::updateTransform()
++{
++	b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
++	for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
++	{
++		f->Synchronize(broadPhase, m_xf, m_xf);
++	}
++}
++
+ void b2Body::SetActive(bool flag)
+ {
+ 	b2Assert(m_world->IsLocked() == false);
+diff --git a/Box2D/Dynamics/b2Body.h b/Box2D/Dynamics/b2Body.h
+index c191f6d..34a12f3 100644
+--- a/Box2D/Dynamics/b2Body.h
++++ b/Box2D/Dynamics/b2Body.h
+@@ -166,6 +166,8 @@ public:
+ 	/// @return the world transform of the body's origin.
+ 	const b2Transform& GetTransform() const;
+ 
++	void SetPosition(const b2Vec2& position);
++
+ 	/// Get the world body origin position.
+ 	/// @return the world position of the body's origin.
+ 	const b2Vec2& GetPosition() const;
+@@ -174,6 +176,8 @@ public:
+ 	/// @return the current world rotation angle in radians.
+ 	float32 GetAngle() const;
+ 
++	void SetAngle(float32 angle);
++
+ 	/// Get the world position of the center of mass.
+ 	const b2Vec2& GetWorldCenter() const;
+ 
+@@ -424,11 +428,15 @@ private:
+ 	b2Body(const b2BodyDef* bd, b2World* world);
+ 	~b2Body();
+ 
++	//Called in SetTransform, also used in SetPosition/SetAngle
++	void updateTransform();
++
+ 	void SynchronizeFixtures();
+ 	void SynchronizeTransform();
+ 
+ 	// This is used to prevent connected bodies from colliding.
+ 	// It may lie, depending on the collideConnected flag.
++	// This function no longer checks that at least one body type is dynamic.
+ 	bool ShouldCollide(const b2Body* other) const;
+ 
+ 	void Advance(float32 t);
+diff --git a/Box2D/Dynamics/b2ContactManager.cpp b/Box2D/Dynamics/b2ContactManager.cpp
+index 051cc2f..b3bd004 100644
+--- a/Box2D/Dynamics/b2ContactManager.cpp
++++ b/Box2D/Dynamics/b2ContactManager.cpp
+@@ -140,8 +140,8 @@ void b2ContactManager::Collide()
+ 			c->m_flags &= ~b2Contact::e_filterFlag;
+ 		}
+ 
+-		bool activeA = bodyA->IsAwake() && bodyA->m_type != b2_staticBody;
+-		bool activeB = bodyB->IsAwake() && bodyB->m_type != b2_staticBody;
++		bool activeA = bodyA->IsAwake() && (bodyA->m_type != b2_staticBody || fixtureA->IsSensor());
++		bool activeB = bodyB->IsAwake() && (bodyB->m_type != b2_staticBody || fixtureB->IsSensor());
+ 
+ 		// At least one body must be awake and it must be dynamic or kinematic.
+ 		if (activeA == false && activeB == false)
+diff --git a/Box2D/Dynamics/b2Fixture.cpp b/Box2D/Dynamics/b2Fixture.cpp
+index 956b485..2689ce5 100644
+--- a/Box2D/Dynamics/b2Fixture.cpp
++++ b/Box2D/Dynamics/b2Fixture.cpp
+@@ -226,6 +226,20 @@ void b2Fixture::SetSensor(bool sensor)
+ 	}
+ }
+ 
++bool b2Fixture::ShapeQuery(const b2Shape* shape, const b2Transform& xf, int32 childIndex) const
++{
++	return m_shape->ShapeQuery(shape, m_body->GetTransform(), xf, childIndex);
++}
++
++b2AABB b2Fixture::ComputeAABB() const
++{
++	b2AABB result;
++
++	m_shape->ComputeAABB(&result, m_body->GetTransform(), 0);
++
++	return result;
++}
++
+ void b2Fixture::Dump(int32 bodyIndex)
+ {
+ 	b2Log("    b2FixtureDef fd;\n");
+diff --git a/Box2D/Dynamics/b2Fixture.h b/Box2D/Dynamics/b2Fixture.h
+index 9f7a8aa..ff3e0bc 100644
+--- a/Box2D/Dynamics/b2Fixture.h
++++ b/Box2D/Dynamics/b2Fixture.h
+@@ -22,35 +22,13 @@
+ #include "Box2D/Dynamics/b2Body.h"
+ #include "Box2D/Collision/b2Collision.h"
+ #include "Box2D/Collision/Shapes/b2Shape.h"
++#include "Box2D/Common/b2Filter.h"
+ 
+ class b2BlockAllocator;
+ class b2Body;
+ class b2BroadPhase;
+ class b2Fixture;
+ 
+-/// This holds contact filtering data.
+-struct b2Filter
+-{
+-	b2Filter()
+-	{
+-		categoryBits = 0x0001;
+-		maskBits = 0xFFFF;
+-		groupIndex = 0;
+-	}
+-
+-	/// The collision category bits. Normally you would just set one bit.
+-	uint16 categoryBits;
+-
+-	/// The collision mask bits. This states the categories that this
+-	/// shape would accept for collision.
+-	uint16 maskBits;
+-
+-	/// Collision groups allow a certain group of objects to never collide (negative)
+-	/// or always collide (positive). Zero means no collision group. Non-zero group
+-	/// filtering always wins against the mask bits.
+-	int16 groupIndex;
+-};
+-
+ /// A fixture definition is used to create a fixture. This class defines an
+ /// abstract fixture definition. You can reuse fixture definitions safely.
+ struct b2FixtureDef
+@@ -124,6 +102,9 @@ public:
+ 	/// @return the true if the shape is a sensor.
+ 	bool IsSensor() const;
+ 
++	uint32 GetLayers() const;
++	void SetLayers(uint32 layers);
++
+ 	/// Set the contact filtering data. This will not update contacts until the next time
+ 	/// step when either parent body is active and awake.
+ 	/// This automatically calls Refilter.
+@@ -161,6 +142,12 @@ public:
+ 	/// @param input the ray-cast input parameters.
+ 	bool RayCast(b2RayCastOutput* output, const b2RayCastInput& input, int32 childIndex) const;
+ 
++	bool ShapeQuery(
++		const b2Shape* shape,
++		const b2Transform& xf,
++		int32 childIndex
++	) const;
++
+ 	/// Get the mass data for this fixture. The mass data is based on the density and
+ 	/// the shape. The rotational inertia is about the shape's origin. This operation
+ 	/// may be expensive.
+@@ -192,6 +179,8 @@ public:
+ 	/// the body transform.
+ 	const b2AABB& GetAABB(int32 childIndex) const;
+ 
++	b2AABB ComputeAABB() const;
++
+ 	/// Dump this fixture to the log file.
+ 	void Dump(int32 bodyIndex);
+ 
+@@ -255,6 +244,16 @@ inline bool b2Fixture::IsSensor() const
+ 	return m_isSensor;
+ }
+ 
++inline uint32 b2Fixture::GetLayers() const
++{
++	return m_filter.layers;
++}
++
++inline void b2Fixture::SetLayers(uint32 layers)
++{
++	m_filter.layers = layers;
++}
++
+ inline const b2Filter& b2Fixture::GetFilterData() const
+ {
+ 	return m_filter;
+diff --git a/Box2D/Dynamics/b2World.cpp b/Box2D/Dynamics/b2World.cpp
+index f21812e..a8fc0ab 100644
+--- a/Box2D/Dynamics/b2World.cpp
++++ b/Box2D/Dynamics/b2World.cpp
+@@ -638,7 +638,9 @@ void b2World::SolveTOI(const b2TimeStep& step)
+ 
+ 				b2BodyType typeA = bA->m_type;
+ 				b2BodyType typeB = bB->m_type;
+-				b2Assert(typeA == b2_dynamicBody || typeB == b2_dynamicBody);
++
++				if (typeA != b2_dynamicBody && typeB != b2_dynamicBody)
++					continue;
+ 
+ 				bool activeA = bA->IsAwake() && typeA != b2_staticBody;
+ 				bool activeB = bB->IsAwake() && typeB != b2_staticBody;
+@@ -976,51 +978,139 @@ struct b2WorldQueryWrapper
+ 	bool QueryCallback(int32 proxyId)
+ 	{
+ 		b2FixtureProxy* proxy = (b2FixtureProxy*)broadPhase->GetUserData(proxyId);
+-		return callback->ReportFixture(proxy->fixture);
++		b2Filter _filter = proxy->fixture->GetFilterData();
++		
++		if (!_filter.isQueryCollide(filter)) {
++			return true;
++		}
++		else {
++			return callback(proxy->fixture);
++		}
+ 	}
+ 
+ 	const b2BroadPhase* broadPhase;
+-	b2QueryCallback* callback;
++	b2QueryCallback callback;
++	b2Filter filter;
+ };
+ 
+-void b2World::QueryAABB(b2QueryCallback* callback, const b2AABB& aabb) const
++void b2World::QueryAABB(b2QueryCallback callback, const b2AABB& aabb, const b2Filter& filter) const
+ {
+ 	b2WorldQueryWrapper wrapper;
+ 	wrapper.broadPhase = &m_contactManager.m_broadPhase;
+ 	wrapper.callback = callback;
++	wrapper.filter = filter;
+ 	m_contactManager.m_broadPhase.Query(&wrapper, aabb);
+ }
+ 
++struct b2WorldQueryPointWrapper
++{
++	bool QueryCallback(int32 proxyId)
++	{
++		b2Fixture* fixture;
++		int32 index;
++		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
++		b2Filter _filter = fixture->GetFilterData();
++
++		if (_filter.isQueryCollide(filter) && fixture->TestPoint(target)) {
++			return callback(fixture);
++		}
++		else {
++			return true;
++		}
++	}
++
++	const b2BroadPhase* broadPhase;
++	b2Vec2 target;
++	b2QueryCallback callback;
++	b2Filter filter;
++};
++
++void b2World::QueryPoint(b2QueryCallback callback, const b2Vec2& p, const b2Filter& filter) const
++{
++	b2WorldQueryPointWrapper wrapper;
++	wrapper.broadPhase = &m_contactManager.m_broadPhase;
++	wrapper.target = p;
++	wrapper.callback = callback;
++	wrapper.filter = filter;
++	m_contactManager.m_broadPhase.Query(&wrapper, b2AABB{ p, p });
++}
++
++struct b2WorldQueryShapeWrapper
++{
++	void QueryShapeCallback(int32 proxyId)
++	{
++		b2Fixture* fixture;
++		int32 index;
++		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
++		b2Filter _filter = fixture->GetFilterData();
++
++		if (
++			_filter.isQueryCollide(filter) &&
++			fixture->ShapeQuery(shape, xf, index)
++		) {
++			callback(fixture);
++		}
++	}
++
++	const b2BroadPhase* broadPhase;
++	const b2Shape* shape;
++	b2QueryCallback callback;
++	b2Transform xf;
++	b2Filter filter;
++};
++
++void b2World::QueryShape(
++	b2QueryCallback callback,
++	const b2Transform& xf,
++	const b2Shape* shape,
++	const b2Filter& filter
++) const{
++	b2WorldQueryShapeWrapper wrapper;
++	wrapper.broadPhase = &m_contactManager.m_broadPhase;
++	wrapper.callback = callback;
++	wrapper.shape = shape;
++	wrapper.xf = xf;
++	wrapper.filter = filter;
++	m_contactManager.m_broadPhase.QueryShape(&wrapper, xf, shape);
++}
++
+ struct b2WorldRayCastWrapper
+ {
+ 	float32 RayCastCallback(const b2RayCastInput& input, int32 proxyId)
+ 	{
+-		void* userData = broadPhase->GetUserData(proxyId);
+-		b2FixtureProxy* proxy = (b2FixtureProxy*)userData;
+-		b2Fixture* fixture = proxy->fixture;
+-		int32 index = proxy->childIndex;
++		b2Fixture* fixture;
++		int32 index;
++		std::tie(fixture, index) = broadPhase->GetFixture(proxyId);
+ 		b2RayCastOutput output;
+-		bool hit = fixture->RayCast(&output, input, index);
++		b2Filter _filter = fixture->GetFilterData();
+ 
+-		if (hit)
++		if (_filter.isQueryCollide(filter) && fixture->RayCast(&output, input, index))
+ 		{
+ 			float32 fraction = output.fraction;
+ 			b2Vec2 point = (1.0f - fraction) * input.p1 + fraction * input.p2;
+-			return callback->ReportFixture(fixture, point, output.normal, fraction);
++			return callback(fixture, point, output.normal, fraction);
++		}
++		else
++		{
++			return input.maxFraction;
+ 		}
+-
+-		return input.maxFraction;
+ 	}
+ 
+ 	const b2BroadPhase* broadPhase;
+-	b2RayCastCallback* callback;
++	b2RayCastCallback callback;
++	b2Filter filter;
+ };
+ 
+-void b2World::RayCast(b2RayCastCallback* callback, const b2Vec2& point1, const b2Vec2& point2) const
+-{
++void b2World::RayCast(
++	b2RayCastCallback callback,
++	const b2Vec2& point1,
++	const b2Vec2& point2,
++	const b2Filter& filter
++) const{
+ 	b2WorldRayCastWrapper wrapper;
+ 	wrapper.broadPhase = &m_contactManager.m_broadPhase;
+ 	wrapper.callback = callback;
++	wrapper.filter = filter;
+ 	b2RayCastInput input;
+ 	input.maxFraction = 1.0f;
+ 	input.p1 = point1;
+diff --git a/Box2D/Dynamics/b2World.h b/Box2D/Dynamics/b2World.h
+index d5ad20c..87cec72 100644
+--- a/Box2D/Dynamics/b2World.h
++++ b/Box2D/Dynamics/b2World.h
+@@ -19,6 +19,7 @@
+ #ifndef B2_WORLD_H
+ #define B2_WORLD_H
+ 
++#include "Box2D/Common/b2Filter.h"
+ #include "Box2D/Common/b2Math.h"
+ #include "Box2D/Common/b2BlockAllocator.h"
+ #include "Box2D/Common/b2StackAllocator.h"
+@@ -111,7 +112,20 @@ public:
+ 	/// provided AABB.
+ 	/// @param callback a user implemented callback class.
+ 	/// @param aabb the query box.
+-	void QueryAABB(b2QueryCallback* callback, const b2AABB& aabb) const;
++	/// @param filter defines the types of fixtures to collide with. Use a filter with categoryBits and
++	/// layers both 0xFFFFFFFF for previous behavior, to collide with all objects that physically
++	/// overlap with the line.
++	void QueryAABB(b2QueryCallback callback, const b2AABB& aabb, const b2Filter& filter) const;
++
++	void QueryPoint(b2QueryCallback callback, const b2Vec2& p, const b2Filter& filter) const;
++
++	void QueryShape(
++		b2QueryCallback callback,
++		//The transform applied to the shape (position & angle), as though it were in a body.
++		const b2Transform& xf,
++		const b2Shape* shape,
++		const b2Filter& filter
++	) const;
+ 
+ 	/// Ray-cast the world for all fixtures in the path of the ray. Your callback
+ 	/// controls whether you get the closest point, any point, or n-points.
+@@ -119,7 +133,15 @@ public:
+ 	/// @param callback a user implemented callback class.
+ 	/// @param point1 the ray starting point
+ 	/// @param point2 the ray ending point
+-	void RayCast(b2RayCastCallback* callback, const b2Vec2& point1, const b2Vec2& point2) const;
++	/// @param filter defines the types of fixtures to collide with. Use a filter with categoryBits and
++	/// layers both 0xFFFFFFFF for previous behavior, to collide with all objects that physically
++	/// overlap with the line.
++	void RayCast(
++		b2RayCastCallback callback,
++		const b2Vec2& point1,
++		const b2Vec2& point2,
++		const b2Filter& filter
++	) const;
+ 
+ 	/// Get the world body list. With the returned body, use b2Body::GetNext to get
+ 	/// the next body in the world list. A nullptr body indicates the end of the list.
+diff --git a/Box2D/Dynamics/b2WorldCallbacks.cpp b/Box2D/Dynamics/b2WorldCallbacks.cpp
+index fe71073..16961b1 100644
+--- a/Box2D/Dynamics/b2WorldCallbacks.cpp
++++ b/Box2D/Dynamics/b2WorldCallbacks.cpp
+@@ -26,11 +26,5 @@ bool b2ContactFilter::ShouldCollide(b2Fixture* fixtureA, b2Fixture* fixtureB)
+ 	const b2Filter& filterA = fixtureA->GetFilterData();
+ 	const b2Filter& filterB = fixtureB->GetFilterData();
+ 
+-	if (filterA.groupIndex == filterB.groupIndex && filterA.groupIndex != 0)
+-	{
+-		return filterA.groupIndex > 0;
+-	}
+-
+-	bool collide = (filterA.maskBits & filterB.categoryBits) != 0 && (filterA.categoryBits & filterB.maskBits) != 0;
+-	return collide;
++	return filterA.shouldCollide(filterB);
+ }
+diff --git a/Box2D/Dynamics/b2WorldCallbacks.h b/Box2D/Dynamics/b2WorldCallbacks.h
+index 3d5580a..5e80f8a 100644
+--- a/Box2D/Dynamics/b2WorldCallbacks.h
++++ b/Box2D/Dynamics/b2WorldCallbacks.h
+@@ -19,6 +19,8 @@
+ #ifndef B2_WORLD_CALLBACKS_H
+ #define B2_WORLD_CALLBACKS_H
+ 
++#include <functional>
++
+ #include "Box2D/Common/b2Settings.h"
+ 
+ struct b2Vec2;
+@@ -120,36 +122,25 @@ public:
+ 
+ /// Callback class for AABB queries.
+ /// See b2World::Query
+-class b2QueryCallback
+-{
+-public:
+-	virtual ~b2QueryCallback() {}
+-
+-	/// Called for each fixture found in the query AABB.
+-	/// @return false to terminate the query.
+-	virtual bool ReportFixture(b2Fixture* fixture) = 0;
+-};
++/// Called for each fixture found in the query AABB.
++/// @return false to terminate the query.
++typedef std::function<bool(b2Fixture*)> b2QueryCallback;
+ 
+ /// Callback class for ray casts.
+ /// See b2World::RayCast
+-class b2RayCastCallback
+-{
+-public:
+-	virtual ~b2RayCastCallback() {}
+-
+-	/// Called for each fixture found in the query. You control how the ray cast
+-	/// proceeds by returning a float:
+-	/// return -1: ignore this fixture and continue
+-	/// return 0: terminate the ray cast
+-	/// return fraction: clip the ray to this point
+-	/// return 1: don't clip the ray and continue
+-	/// @param fixture the fixture hit by the ray
+-	/// @param point the point of initial intersection
+-	/// @param normal the normal vector at the point of intersection
+-	/// @return -1 to filter, 0 to terminate, fraction to clip the ray for
+-	/// closest hit, 1 to continue
+-	virtual float32 ReportFixture(	b2Fixture* fixture, const b2Vec2& point,
+-									const b2Vec2& normal, float32 fraction) = 0;
+-};
++
++/// Called for each fixture found in the query. You control how the ray cast
++/// proceeds by returning a float:
++/// return -1: ignore this fixture and continue
++/// return 0: terminate the ray cast
++/// return fraction: clip the ray to this point
++/// return 1: don't clip the ray and continue
++/// @param fixture the fixture hit by the ray
++/// @param point the point of initial intersection
++/// @param normal the normal vector at the point of intersection
++/// @return -1 to filter, 0 to terminate, fraction to clip the ray for
++/// closest hit, 1 to continue
++
++typedef std::function<float32(b2Fixture*, const b2Vec2&, const b2Vec2&, float32)> b2RayCastCallback;
+ 
+ #endif
+-- 
+2.13.3.windows.1
+
